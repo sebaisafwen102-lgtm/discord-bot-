@@ -1079,6 +1079,302 @@ async def on_member_remove(member):
         
     except Exception as e:
         print(f"❌ خطأ في نظام المغادرة: {e}")
+# ==========================
+# ⚖️ PUNISHMENT SYSTEM (Timeout, Ban, Kick, Unban, Untimeout)
+# ==========================
+
+# ----- Helper Functions -----
+
+def convert_time_to_seconds(time_str: str):
+    """Convert time string (e.g., 10m, 1h, 1d) to seconds."""
+    time_str = time_str.lower()
+    if time_str.endswith('s'):
+        return int(time_str[:-1])
+    elif time_str.endswith('m'):
+        return int(time_str[:-1]) * 60
+    elif time_str.endswith('h'):
+        return int(time_str[:-1]) * 3600
+    elif time_str.endswith('d'):
+        return int(time_str[:-1]) * 86400
+    else:
+        return None
+
+async def send_punishment_dm(member: discord.Member, punishment_type: str, duration: str, reason: str, moderator: discord.Member):
+    """Send a DM to the punished member with full details."""
+    try:
+        embed = discord.Embed(
+            title=f"⚠️ {punishment_type}",
+            description=f"You have been **{punishment_type.lower()}** in **{member.guild.name}**.",
+            color=discord.Color.red()
+        )
+        embed.add_field(name="📌 Reason", value=reason if reason else "No reason provided.", inline=False)
+        embed.add_field(name="⏰ Duration", value=duration, inline=True)
+        embed.add_field(name="👮 Moderator", value=moderator.display_name, inline=True)
+        embed.set_footer(text=f"User ID: {member.id}")
+        embed.timestamp = discord.utils.utcnow()
+        
+        await member.send(embed=embed)
+        print(f"✅ DM sent to {member.display_name}")
+    except discord.Forbidden:
+        print(f"❌ DM blocked for {member.display_name}")
+    except Exception as e:
+        print(f"❌ Error sending DM: {e}")
+
+async def send_to_punishment_channel(guild: discord.Guild, punishment_type: str, member: discord.Member, moderator: discord.Member, duration: str, reason: str):
+    """Log the punishment in the dedicated punishment text channel."""
+    try:
+        # Get or create the punishment channel
+        channel = discord.utils.get(guild.text_channels, name="└🚫・𝗣𝚞𝚗𝚜𝚑𝚒𝚖𝚎𝚗𝚝")
+        if channel is None:
+            channel = await guild.create_text_channel(
+                name="└🚫・𝗣𝚞𝚗𝚜𝚑𝚒𝚖𝚎𝚗𝚝",
+                reason="Punishment channel created automatically."
+            )
+            print("✅ Punishment channel created.")
+        
+        embed = discord.Embed(
+            title=f"# Member @{member.display_name} has been {punishment_type.lower()}.",
+            color=discord.Color.red()
+        )
+        embed.add_field(
+            name="Executed By",
+            value=f"User: @{moderator.display_name}\nUser ID: ({moderator.id})",
+            inline=False
+        )
+        embed.add_field(
+            name="Punishment Reason",
+            value=reason if reason else "No reason provided.",
+            inline=False
+        )
+        # Add duration if applicable
+        if duration and duration != "N/A" and duration != "Permanent":
+            embed.add_field(name="Punishment Duration", value=duration, inline=False)
+        elif duration == "Permanent":
+            embed.add_field(name="Punishment Duration", value="**Permanent**", inline=False)
+        
+        embed.set_footer(text=f"Executed at: {discord.utils.utcnow().strftime('%d/%m/%Y %H:%M')}")
+        embed.timestamp = discord.utils.utcnow()
+        
+        await channel.send(embed=embed)
+        print(f"📝 Punishment logged in punishment channel.")
+    except Exception as e:
+        print(f"❌ Error sending to punishment channel: {e}")
+
+async def log_punishment(guild: discord.Guild, punishment_type: str, member: discord.Member, moderator: discord.Member, duration: str, reason: str):
+    """Log the punishment in the logs channel."""
+    try:
+        log_channel = discord.utils.get(guild.text_channels, name="logs")
+        if log_channel is None:
+            log_channel = await guild.create_text_channel(
+                name="logs",
+                reason="Logs channel created automatically."
+            )
+            print("✅ Logs channel created.")
+        
+        embed = discord.Embed(
+            title=f"📋 {punishment_type}",
+            color=discord.Color.dark_red()
+        )
+        embed.add_field(name="👤 Member", value=f"{member.mention} ({member.display_name})", inline=False)
+        embed.add_field(name="👮 Moderator", value=f"{moderator.mention} ({moderator.display_name})", inline=False)
+        embed.add_field(name="⏰ Duration", value=duration, inline=True)
+        embed.add_field(name="📌 Reason", value=reason if reason else "No reason provided.", inline=False)
+        embed.set_footer(text=f"Member ID: {member.id} | Moderator ID: {moderator.id}")
+        embed.timestamp = discord.utils.utcnow()
+        
+        await log_channel.send(embed=embed)
+        print(f"📝 Punishment logged in logs channel.")
+    except Exception as e:
+        print(f"❌ Error logging punishment: {e}")
+
+async def unban_after(guild: discord.Guild, user_id: int, delay: int):
+    """Automatically unban a user after a specified time (for temporary bans)."""
+    await asyncio.sleep(delay)
+    try:
+        user = await guild.fetch_member(user_id)
+        if user:
+            await guild.unban(user)
+            print(f"✅ {user.display_name} has been unbanned automatically.")
+            # Log the auto-unban
+            log_channel = discord.utils.get(guild.text_channels, name="logs")
+            if log_channel:
+                embed = discord.Embed(
+                    title="✅ Automatic Unban",
+                    description=f"<@{user_id}> has been unbanned automatically.",
+                    color=discord.Color.green()
+                )
+                await log_channel.send(embed=embed)
+    except Exception as e:
+        print(f"❌ Error in auto-unban: {e}")
+
+# ----- Punishment Commands -----
+
+@bot.command()
+@commands.is_owner()  # Change to @commands.has_permissions(moderate_members=True) for moderators
+async def timeout(ctx, member: discord.Member, time: str, *, reason: str = "No reason provided."):
+    """
+    Timeout a member for a specified duration.
+    Usage: !timeout @user 10m reason
+    Valid time formats: 10s, 5m, 2h, 1d
+    """
+    time_seconds = convert_time_to_seconds(time)
+    if time_seconds is None:
+        return await ctx.send("❌ Invalid time format! Use: `10s`, `5m`, `2h`, `1d`", delete_after=5)
+    if time_seconds > 2419200:  # 28 days max
+        return await ctx.send("❌ Maximum timeout is 28 days!", delete_after=5)
+    
+    try:
+        await member.timeout(timedelta(seconds=time_seconds), reason=reason)
+        await send_punishment_dm(member, "Timeout", time, reason, ctx.author)
+        await send_to_punishment_channel(ctx.guild, "Timeout", member, ctx.author, time, reason)
+        await log_punishment(ctx.guild, "⏱️ Timeout", member, ctx.author, time, reason)
+        
+        embed = discord.Embed(
+            title="⏱️ Timeout",
+            description=f"{member.mention} has been timed out!",
+            color=discord.Color.orange()
+        )
+        embed.add_field(name="Duration", value=time, inline=True)
+        embed.add_field(name="Reason", value=reason, inline=False)
+        embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
+        embed.set_footer(text=f"ID: {member.id}")
+        await ctx.send(embed=embed)
+    except Exception as e:
+        await ctx.send(f"❌ Error: {str(e)}", delete_after=5)
+
+@bot.command()
+@commands.is_owner()  # Change to @commands.has_permissions(ban_members=True) for moderators
+async def ban(ctx, member: discord.Member, time: str = None, *, reason: str = "No reason provided."):
+    """
+    Ban a member (permanently or temporarily).
+    Usage: !ban @user reason (permanent)
+           !ban @user 1d reason (temporary)
+    """
+    try:
+        if time and time.lower() != "permanent":
+            time_seconds = convert_time_to_seconds(time)
+            if time_seconds is None:
+                return await ctx.send("❌ Invalid time format! Use: `10m`, `1h`, `1d`", delete_after=5)
+            
+            # Temporary ban
+            await send_punishment_dm(member, "Temporary Ban", time, reason, ctx.author)
+            await member.ban(reason=f"{reason} (Temporary: {time})")
+            await send_to_punishment_channel(ctx.guild, "Temporary Ban", member, ctx.author, time, reason)
+            await log_punishment(ctx.guild, "🔨 Temporary Ban", member, ctx.author, time, reason)
+            asyncio.create_task(unban_after(ctx.guild, member.id, time_seconds))
+            
+            embed = discord.Embed(
+                title="🔨 Temporary Ban",
+                description=f"{member.mention} has been banned for {time}!",
+                color=discord.Color.red()
+            )
+            embed.add_field(name="Reason", value=reason, inline=False)
+            embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
+            await ctx.send(embed=embed)
+        else:
+            # Permanent ban
+            await send_punishment_dm(member, "Permanent Ban", "Permanent", reason, ctx.author)
+            await member.ban(reason=reason)
+            await send_to_punishment_channel(ctx.guild, "Permanent Ban", member, ctx.author, "Permanent", reason)
+            await log_punishment(ctx.guild, "🔨 Permanent Ban", member, ctx.author, "Permanent", reason)
+            
+            embed = discord.Embed(
+                title="🔨 Permanent Ban",
+                description=f"{member.mention} has been banned permanently!",
+                color=discord.Color.dark_red()
+            )
+            embed.add_field(name="Reason", value=reason, inline=False)
+            embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
+            await ctx.send(embed=embed)
+    except Exception as e:
+        await ctx.send(f"❌ Error: {str(e)}", delete_after=5)
+
+@bot.command()
+@commands.is_owner()  # Change to @commands.has_permissions(kick_members=True) for moderators
+async def kick(ctx, member: discord.Member, *, reason: str = "No reason provided."):
+    """
+    Kick a member from the server.
+    Usage: !kick @user reason
+    """
+    try:
+        await send_punishment_dm(member, "Kick", "N/A", reason, ctx.author)
+        await member.kick(reason=reason)
+        await send_to_punishment_channel(ctx.guild, "Kick", member, ctx.author, "N/A", reason)
+        await log_punishment(ctx.guild, "👢 Kick", member, ctx.author, "N/A", reason)
+        
+        embed = discord.Embed(
+            title="👢 Kick",
+            description=f"{member.mention} has been kicked!",
+            color=discord.Color.yellow()
+        )
+        embed.add_field(name="Reason", value=reason, inline=False)
+        embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
+        await ctx.send(embed=embed)
+    except Exception as e:
+        await ctx.send(f"❌ Error: {str(e)}", delete_after=5)
+
+@bot.command()
+@commands.is_owner()  # Change to @commands.has_permissions(moderate_members=True) for moderators
+async def untimeout(ctx, member: discord.Member, *, reason: str = "No reason provided."):
+    """
+    Remove timeout from a member.
+    Usage: !untimeout @user reason
+    """
+    try:
+        await member.timeout(None, reason=reason)
+        embed = discord.Embed(
+            title="✅ Timeout Removed",
+            description=f"{member.mention} has been untimed out.",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Reason", value=reason, inline=False)
+        embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
+        await ctx.send(embed=embed)
+        
+        # Log to logs channel
+        log_channel = discord.utils.get(ctx.guild.text_channels, name="logs")
+        if log_channel:
+            log_embed = discord.Embed(
+                title="✅ Timeout Removed",
+                description=f"{member.mention} was untimed out by {ctx.author.mention}",
+                color=discord.Color.green()
+            )
+            log_embed.add_field(name="Reason", value=reason, inline=False)
+            await log_channel.send(embed=log_embed)
+    except Exception as e:
+        await ctx.send(f"❌ Error: {str(e)}", delete_after=5)
+
+@bot.command()
+@commands.is_owner()  # Change to @commands.has_permissions(ban_members=True) for moderators
+async def unban(ctx, user_id: int, *, reason: str = "No reason provided."):
+    """
+    Unban a user by their ID.
+    Usage: !unban 123456789 reason
+    """
+    try:
+        user = await bot.fetch_user(user_id)
+        await ctx.guild.unban(user, reason=reason)
+        embed = discord.Embed(
+            title="✅ Unban",
+            description=f"{user.mention} has been unbanned.",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Reason", value=reason, inline=False)
+        embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
+        await ctx.send(embed=embed)
+        
+        # Log to logs channel
+        log_channel = discord.utils.get(ctx.guild.text_channels, name="logs")
+        if log_channel:
+            log_embed = discord.Embed(
+                title="✅ Unban",
+                description=f"{user.mention} was unbanned by {ctx.author.mention}",
+                color=discord.Color.green()
+            )
+            log_embed.add_field(name="Reason", value=reason, inline=False)
+            await log_channel.send(embed=log_embed)
+    except Exception as e:
+        await ctx.send(f"❌ Error: {str(e)}", delete_after=5)
 
 # ==========================
 # RUN BOT
