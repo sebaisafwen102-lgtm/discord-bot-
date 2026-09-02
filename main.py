@@ -993,6 +993,92 @@ async def lvl_up(ctx):
     embed.set_footer(text="Click the buttons below!")
     
     await ctx.send(embed=embed, view=LevelView(ctx))
+# ==========================
+# 🚀 نظام البوستات (Boost Tracker)
+# ==========================
+
+@bot.event
+async def on_member_update(before, after):
+    """عند تغيير حالة العضو - يكتشف البوستات الجديدة فقط"""
+    
+    # ===== كشف Boost جديد (فقط) =====
+    if before.premium_since is None and after.premium_since is not None:
+        # العضو عمل Boost
+        guild = after.guild
+        
+        # نجيب روم البوستات
+        boost_channel = discord.utils.get(guild.text_channels, name="├🚀・𝐁𝐨𝐨𝐬𝐭𝐬")
+        
+        if boost_channel is None:
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(send_messages=True, read_messages=True),
+                guild.me: discord.PermissionOverwrite(send_messages=True, read_messages=True)
+            }
+            boost_channel = await guild.create_text_channel(
+                name="├🚀・𝐁𝐨𝐨𝐬𝐭𝐬",
+                overwrites=overwrites,
+                reason="تم إنشاء روم البوستات"
+            )
+            print("✅ تم إنشاء روم البوستات!")
+        
+        try:
+            embed = discord.Embed(
+                description=f"🚀 {after.mention} **boosted the server!** Thank you! 🎉",
+                color=discord.Color.purple()
+            )
+            embed.set_thumbnail(url=after.display_avatar.url)
+            embed.add_field(name="⭐ Boost Count", value=f"{guild.premium_subscription_count} boosts", inline=True)
+            embed.add_field(name="📊 Boost Level", value=f"Level {guild.premium_tier}", inline=True)
+            embed.set_footer(text=f"ID: {after.id} • {after.name}")
+            embed.timestamp = datetime.utcnow()
+            
+            await boost_channel.send(embed=embed)
+            
+        except Exception as e:
+            print(f"❌ Erro in booste système : {e}")
+# ==========================
+# 👋 نظام المغادرة (Leave Tracker)
+# ==========================
+
+@bot.event
+async def on_member_remove(member):
+    """عند خروج عضو - يكتب في روم المغادرين"""
+    
+    if member.bot:
+        return
+    
+    guild = member.guild
+    
+    # ===== نجيب روم المغادرين =====
+    leave_channel = discord.utils.get(guild.text_channels, name="├👋・𝐋𝐞𝐚𝐯𝐞𝐬")
+    
+    # إذا مش موجود نعملو
+    if leave_channel is None:
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(send_messages=True, read_messages=True),
+            guild.me: discord.PermissionOverwrite(send_messages=True, read_messages=True)
+        }
+        leave_channel = await guild.create_text_channel(
+            name="├👋・𝐋𝐞𝐚𝐯𝐞𝐬",
+            overwrites=overwrites,
+            reason="تم إنشاء روم المغادرين"
+        )
+        print("✅ تم إنشاء روم المغادرين!")
+    
+    try:
+        # ===== نرسل رسالة GODBYE =====
+        embed = discord.Embed(
+            description=f"👋 **𝐆𝐎𝐃𝐁𝐘𝐄** {member.mention}",
+            color=discord.Color.red()
+        )
+        embed.set_thumbnail(url=member.display_avatar.url)
+        embed.set_footer(text=f"ID: {member.id} • {member.name}")
+        embed.timestamp = datetime.utcnow()
+        
+        await leave_channel.send(embed=embed)
+        
+    except Exception as e:
+        print(f"❌ خطأ في نظام المغادرة: {e}")
 
 # ==========================
 # RUN BOT
