@@ -43,7 +43,7 @@ intents.voice_states = True
 intents.guilds = True
 intents.invites = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)  # البادئة موجودة ولكن لن تُستخدم
+bot = commands.Bot(command_prefix="/", intents=intents)  # البادئة موجودة ولكن لن تُستخدم
 bot.owner_id = 1454256976048558240
 
 # ==========================
