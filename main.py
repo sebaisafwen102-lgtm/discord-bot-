@@ -1,6 +1,7 @@
 import asyncio
 import re
 import os
+import aiohttp
 os.system("pip install pynacl")
 import sys
 import discord
@@ -1376,6 +1377,166 @@ async def unban(ctx, user_id: int, *, reason: str = "No reason provided."):
     except Exception as e:
         await ctx.send(f"❌ Error: {str(e)}", delete_after=5)
 
+# ملف حفظ الإعدادات
+CONFIG_FILE = "stream_config.json"
+
+def load_config():
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {"kick": None, "tiktok_live": None, "tiktok_video": None, "kick_streamers": [], "tiktok_streamers": [], "tiktok_video_users": []}
+
+def save_config(data):
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(data, f, indent=4)
+
+config = load_config()
+
+# ===== أوامر تحديد القنوات =====
+
+@bot.command()
+@commands.is_owner()
+async def kick_channel(ctx, channel: discord.TextChannel):
+    config["kick"] = channel.id
+    save_config(config)
+    await ctx.send(f"✅ إشعارات **Kick Live** ستُرسل إلى {channel.mention}")
+
+@bot.command()
+@commands.is_owner()
+async def tiktok_live(ctx, channel: discord.TextChannel):
+    config["tiktok_live"] = channel.id
+    save_config(config)
+    await ctx.send(f"✅ إشعارات **TikTok Live** ستُرسل إلى {channel.mention}")
+
+@bot.command()
+@commands.is_owner()
+async def tiktok_video(ctx, channel: discord.TextChannel):
+    config["tiktok_video"] = channel.id
+    save_config(config)
+    await ctx.send(f"✅ إشعارات **TikTok Video** ستُرسل إلى {channel.mention}")
+
+# ===== أوامر إضافة الستريمرز =====
+
+@bot.command()
+@commands.is_owner()
+async def add_kick(ctx, username: str):
+    if username not in config["kick_streamers"]:
+        config["kick_streamers"].append(username)
+        save_config(config)
+    await ctx.send(f"✅ تمت إضافة **{username}** لمراقبة Kick")
+
+@bot.command()
+@commands.is_owner()
+async def add_tiktok(ctx, username: str):
+    if username not in config["tiktok_streamers"]:
+        config["tiktok_streamers"].append(username)
+        save_config(config)
+    await ctx.send(f"✅ تمت إضافة **{username}** لمراقبة TikTok")
+
+@bot.command()
+@commands.is_owner()
+async def add_tiktok_video(ctx, username: str):
+    if username not in config["tiktok_video_users"]:
+        config["tiktok_video_users"].append(username)
+        save_config(config)
+    await ctx.send(f"✅ تمت إضافة **{username}** لمراقبة فيديوهات TikTok")
+
+# ===== أمر الاختبار =====
+
+@bot.command()
+@commands.is_owner()
+async def test(ctx):
+    """اختبار الإعدادات: يرسل رسالة في كل قناة محددة"""
+    if config.get("kick"):
+        ch = bot.get_channel(config["kick"])
+        if ch:
+            await ch.send("🧪 **اختبار Kick**: القناة تعمل!")
+    if config.get("tiktok_live"):
+        ch = bot.get_channel(config["tiktok_live"])
+        if ch:
+            await ch.send("🧪 **اختبار TikTok Live**: القناة تعمل!")
+    if config.get("tiktok_video"):
+        ch = bot.get_channel(config["tiktok_video"])
+        if ch:
+            await ch.send("🧪 **اختبار TikTok Video**: القناة تعمل!")
+    await ctx.send("✅ تم إرسال رسائل الاختبار!")
+
+# ===== دوال المراقبة =====
+
+async def check_kick():
+    ch_id = config.get("kick")
+    streamers = config.get("kick_streamers", [])
+    if not ch_id or not streamers:
+        return
+    channel = bot.get_channel(ch_id)
+    if not channel:
+        return
+    for username in streamers:
+        try:
+            url = f"https://kick.com/api/v2/channels/{username}"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        continue
+                    data = await resp.json()
+                    livestream = data.get("livestream")
+                    if livestream and livestream.get("is_live"):
+                        title = livestream.get("session_title", "Live now!")
+                        embed = discord.Embed(
+                            title=f"🔴 {username} is LIVE on Kick!",
+                            description=title,
+                            color=0x53FC18,
+                            url=f"https://kick.com/{username}"
+                        )
+                        embed.set_footer(text="Kick Live Alert")
+                        await channel.send(embed=embed)
+        except Exception as e:
+            print(f"❌ Kick error for {username}: {e}")
+
+async def check_tiktok_live():
+    ch_id = config.get("tiktok_live")
+    streamers = config.get("tiktok_streamers", [])
+    if not ch_id or not streamers:
+        return
+    channel = bot.get_channel(ch_id)
+    if not channel:
+        return
+    for username in streamers:
+        try:
+            # TikTok Live API يتطلب مفتاح API من tik.tools
+            # هذا مثال مبدئي – يمكنك استبداله بـ WebSocket من tik.tools
+            pass
+        except Exception as e:
+            print(f"❌ TikTok Live error for {username}: {e}")
+
+async def check_tiktok_video():
+    ch_id = config.get("tiktok_video")
+    users = config.get("tiktok_video_users", [])
+    if not ch_id or not users:
+        return
+    channel = bot.get_channel(ch_id)
+    if not channel:
+        return
+    for username in users:
+        try:
+            # TikTok Video API – يمكن استخدام RSS أو مكتبة مثل tiktok-live-api
+            pass
+        except Exception as e:
+            print(f"❌ TikTok Video error for {username}: {e}")
+
+# ===== مهمة دورية =====
+
+@tasks.loop(minutes=1)
+async def stream_monitor():
+    await check_kick()
+    await check_tiktok_live()
+    await check_tiktok_video()
+
+@bot.event
+async def on_ready():
+    # ... الكود الموجود ...
+    stream_monitor.start()
 # ==========================
 # RUN BOT
 # ==========================
