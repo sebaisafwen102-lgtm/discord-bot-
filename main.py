@@ -175,40 +175,11 @@ async def send_level_up(member, guild, source="chat"):
         pass
 
 # ==========================
-# 📡 إعدادات الإشعارات
-# ==========================
-CONFIG_FILE = "stream_config.json"
-
-def load_config():
-    try:
-        with open(CONFIG_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {
-            "kick_channel": None,
-            "tiktok_live_channel": None,
-            "tiktok_video_channel": None,
-            "kick_streamers": [],
-            "tiktok_live_streamers": [],
-            "tiktok_video_users": []
-        }
-
-def save_config(data):
-    with open(CONFIG_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
-config = load_config()
-
-# حالات البث
-kick_live_status = {}
-tiktok_live_status = {}
-tiktok_video_status = {}
-
-# ==========================
 # 🎵 VOICE STATE + AFK + XP
 # ==========================
 @bot.event
 async def on_voice_state_update(member, before, after):
+    # إعادة الاتصال للبوت
     if member.id == bot.user.id:
         guild = member.guild
         if after.channel:
@@ -234,6 +205,7 @@ async def on_voice_state_update(member, before, after):
     
     afk_channel = discord.utils.get(member.guild.voice_channels, name="├😴・𝙰𝚏𝚔")
     
+    # AFK
     if after.channel == afk_channel:
         if str(member.id) in voice_time:
             del voice_time[str(member.id)]
@@ -241,6 +213,7 @@ async def on_voice_state_update(member, before, after):
             del afk_tracker[member.id]
         return
     
+    # Self-Deaf
     if after.self_deaf and not before.self_deaf:
         afk_tracker[member.id] = {
             "start_time": datetime.utcnow(),
@@ -254,6 +227,7 @@ async def on_voice_state_update(member, before, after):
             del afk_tracker[member.id]
             print(f"🔊 {member.display_name} cancel Self-Deaf")
     
+    # Voice XP
     if after.channel and before.channel is None and after.channel != afk_channel:
         voice_time[str(member.id)] = datetime.utcnow()
     elif before.channel and after.channel is None:
@@ -337,7 +311,7 @@ async def load_invite_cache():
             pass
 
 # ==========================
-# 🎯 ON_READY (موحد)
+# 🎯 ON_READY (مع تأخير لتجنب Rate Limit)
 # ==========================
 @bot.event
 async def on_ready():
@@ -346,7 +320,7 @@ async def on_ready():
     print(f"✅ Connected to {len(bot.guilds)} guilds")
     print(f"👑 Owner ID: {bot.owner_id}")
     
-    # تحميل الدعوات
+    # تحميل الدعوات مع تأخير
     for guild in bot.guilds:
         try:
             invites = await guild.invites()
@@ -361,7 +335,7 @@ async def on_ready():
             pass
     print("📊 Invite data loaded!")
     
-    # تحميل الكاش
+    # تحميل الكاش مع تأخير
     for guild in bot.guilds:
         try:
             invites = await guild.invites()
@@ -375,14 +349,8 @@ async def on_ready():
     
     # تحميل المستويات
     load_levels()
-    if not update_voice_xp_level.is_running():
-        update_voice_xp_level.start()
+    update_voice_xp_level.start()
     print("🎵 Voice XP tracker started!")
-    
-    # تشغيل مراقبة البثوث
-    if not stream_monitor.is_running():
-        stream_monitor.start()
-    print("📡 Stream monitor started!")
 
 # ==========================
 # 🔄 VOICE XP UPDATE (5 MIN)
@@ -484,6 +452,7 @@ async def on_message(message):
     if not message.guild:
         return await bot.process_commands(message)
     
+    # Filter
     if not message.author.guild_permissions.administrator:
         content = message.content.lower()
         if INVITE_REGEX.search(content):
@@ -502,6 +471,7 @@ async def on_message(message):
                     warnings[message.author.id] = 0
                 return
     
+    # XP System
     if message.author.voice and message.author.voice.channel:
         afk_channel = discord.utils.get(message.guild.voice_channels, name="├😴・𝙰𝚏𝚔")
         if message.author.voice.channel == afk_channel:
@@ -516,190 +486,23 @@ async def on_message(message):
     await bot.process_commands(message)
 
 # ==========================
-# 🚀 BOOST TRACKER
-# ==========================
-@bot.event
-async def on_member_update(before, after):
-    if before.premium_since is None and after.premium_since is not None:
-        guild = after.guild
-        boost_channel = discord.utils.get(guild.text_channels, name="├🚀・𝐁𝐨𝐨𝐬𝐭𝐬")
-        if boost_channel is None:
-            overwrites = {
-                guild.default_role: discord.PermissionOverwrite(send_messages=True, read_messages=True),
-                guild.me: discord.PermissionOverwrite(send_messages=True, read_messages=True)
-            }
-            boost_channel = await guild.create_text_channel(
-                name="├🚀・𝐁𝐨𝐨𝐬𝐭𝐬",
-                overwrites=overwrites,
-                reason="تم إنشاء روم البوستات"
-            )
-            print("✅ تم إنشاء روم البوستات!")
-        try:
-            embed = discord.Embed(
-                description=f"🚀 {after.mention} **boosted the server!** Thank you! 🎉",
-                color=discord.Color.purple()
-            )
-            embed.set_thumbnail(url=after.display_avatar.url)
-            embed.add_field(name="⭐ Boost Count", value=f"{guild.premium_subscription_count} boosts", inline=True)
-            embed.add_field(name="📊 Boost Level", value=f"Level {guild.premium_tier}", inline=True)
-            embed.set_footer(text=f"ID: {after.id} • {after.name}")
-            embed.timestamp = datetime.utcnow()
-            await boost_channel.send(embed=embed)
-        except Exception as e:
-            print(f"❌ Boost error: {e}")
-
-# ==========================
-# 👋 LEAVE TRACKER
-# ==========================
-@bot.event
-async def on_member_remove(member):
-    if member.bot:
-        return
-    guild = member.guild
-    leave_channel = discord.utils.get(guild.text_channels, name="├👋・𝐋𝐞𝐚𝐯𝐞𝐬")
-    if leave_channel is None:
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(send_messages=True, read_messages=True),
-            guild.me: discord.PermissionOverwrite(send_messages=True, read_messages=True)
-        }
-        leave_channel = await guild.create_text_channel(
-            name="├👋・𝐋𝐞𝐚𝐯𝐞𝐬",
-            overwrites=overwrites,
-            reason="تم إنشاء روم المغادرين"
-        )
-        print("✅ تم إنشاء روم المغادرين!")
-    try:
-        embed = discord.Embed(
-            description=f"👋 **𝐆𝐎𝐃𝐁𝐘𝐄** {member.mention}",
-            color=discord.Color.red()
-        )
-        embed.set_thumbnail(url=member.display_avatar.url)
-        embed.set_footer(text=f"ID: {member.id} • {member.name}")
-        embed.timestamp = datetime.utcnow()
-        await leave_channel.send(embed=embed)
-    except Exception as e:
-        print(f"❌ خطأ في نظام المغادرة: {e}")
-
-# ==========================
-# ⚖️ PUNISHMENT SYSTEM
-# ==========================
-def convert_time_to_seconds(time_str: str):
-    time_str = time_str.lower()
-    if time_str.endswith('s'):
-        return int(time_str[:-1])
-    elif time_str.endswith('m'):
-        return int(time_str[:-1]) * 60
-    elif time_str.endswith('h'):
-        return int(time_str[:-1]) * 3600
-    elif time_str.endswith('d'):
-        return int(time_str[:-1]) * 86400
-    else:
-        return None
-
-async def send_punishment_dm(member, punishment_type, duration, reason, moderator):
-    try:
-        embed = discord.Embed(
-            title=f"⚠️ {punishment_type}",
-            description=f"You have been **{punishment_type.lower()}** in **{member.guild.name}**.",
-            color=discord.Color.red()
-        )
-        embed.add_field(name="📌 Reason", value=reason if reason else "No reason provided.", inline=False)
-        embed.add_field(name="⏰ Duration", value=duration, inline=True)
-        embed.add_field(name="👮 Moderator", value=moderator.display_name, inline=True)
-        embed.set_footer(text=f"User ID: {member.id}")
-        embed.timestamp = discord.utils.utcnow()
-        await member.send(embed=embed)
-    except discord.Forbidden:
-        print(f"❌ DM blocked for {member.display_name}")
-    except Exception as e:
-        print(f"❌ Error sending DM: {e}")
-
-async def send_to_punishment_channel(guild, punishment_type, member, moderator, duration, reason):
-    try:
-        channel = discord.utils.get(guild.text_channels, name="└🚫・𝗣𝚞𝚗𝚜𝚑𝚒𝚖𝚎𝚗𝚝")
-        if channel is None:
-            channel = await guild.create_text_channel(
-                name="└🚫・𝗣𝚞𝚗𝚜𝚑𝚒𝚖𝚎𝚗𝚝",
-                reason="Punishment channel created automatically."
-            )
-        embed = discord.Embed(
-            title=f"# Member @{member.display_name} has been {punishment_type.lower()}.",
-            color=discord.Color.red()
-        )
-        embed.add_field(
-            name="Executed By",
-            value=f"User: @{moderator.display_name}\nUser ID: ({moderator.id})",
-            inline=False
-        )
-        embed.add_field(
-            name="Punishment Reason",
-            value=reason if reason else "No reason provided.",
-            inline=False
-        )
-        if duration and duration != "N/A" and duration != "Permanent":
-            embed.add_field(name="Punishment Duration", value=duration, inline=False)
-        elif duration == "Permanent":
-            embed.add_field(name="Punishment Duration", value="**Permanent**", inline=False)
-        embed.set_footer(text=f"Executed at: {discord.utils.utcnow().strftime('%d/%m/%Y %H:%M')}")
-        embed.timestamp = discord.utils.utcnow()
-        await channel.send(embed=embed)
-    except Exception as e:
-        print(f"❌ Error sending to punishment channel: {e}")
-
-async def log_punishment(guild, punishment_type, member, moderator, duration, reason):
-    try:
-        log_channel = discord.utils.get(guild.text_channels, name="logs")
-        if log_channel is None:
-            log_channel = await guild.create_text_channel(
-                name="logs",
-                reason="Logs channel created automatically."
-            )
-        embed = discord.Embed(
-            title=f"📋 {punishment_type}",
-            color=discord.Color.dark_red()
-        )
-        embed.add_field(name="👤 Member", value=f"{member.mention} ({member.display_name})", inline=False)
-        embed.add_field(name="👮 Moderator", value=f"{moderator.mention} ({moderator.display_name})", inline=False)
-        embed.add_field(name="⏰ Duration", value=duration, inline=True)
-        embed.add_field(name="📌 Reason", value=reason if reason else "No reason provided.", inline=False)
-        embed.set_footer(text=f"Member ID: {member.id} | Moderator ID: {moderator.id}")
-        embed.timestamp = discord.utils.utcnow()
-        await log_channel.send(embed=embed)
-    except Exception as e:
-        print(f"❌ Error logging punishment: {e}")
-
-async def unban_after(guild, user_id, delay):
-    await asyncio.sleep(delay)
-    try:
-        user = await guild.fetch_member(user_id)
-        if user:
-            await guild.unban(user)
-            log_channel = discord.utils.get(guild.text_channels, name="logs")
-            if log_channel:
-                embed = discord.Embed(
-                    title="✅ Automatic Unban",
-                    description=f"<@{user_id}> has been unbanned automatically.",
-                    color=discord.Color.green()
-                )
-                await log_channel.send(embed=embed)
-    except Exception as e:
-        print(f"❌ Error in auto-unban: {e}")
-
-# ==========================
 # 🎯 COMMANDS
 # ==========================
 
+# Hello
 @bot.command()
 @commands.is_owner()
 async def hello(ctx):
     await ctx.send(f'👋 Hello {ctx.author.mention}!')
 
+# Write
 @bot.command()
 @commands.is_owner()
 async def write(ctx, *, message):
     await ctx.message.delete()
     await ctx.send(message)
 
+# Voice
 @bot.command()
 @commands.is_owner()
 async def join(ctx):
@@ -1109,7 +912,7 @@ async def reset_levels(ctx, member: discord.Member = None):
         save_levels()
         await ctx.send("✅ Reset all levels")
 
-# Level View
+# Level Up View
 class LevelView(View):
     def __init__(self, ctx):
         super().__init__(timeout=60)
@@ -1191,25 +994,247 @@ async def lvl_up(ctx):
     embed.set_footer(text="Click the buttons below!")
     
     await ctx.send(embed=embed, view=LevelView(ctx))
+# ==========================
+# 🚀 نظام البوستات (Boost Tracker)
+# ==========================
 
+@bot.event
+async def on_member_update(before, after):
+    """عند تغيير حالة العضو - يكتشف البوستات الجديدة فقط"""
+    
+    # ===== كشف Boost جديد (فقط) =====
+    if before.premium_since is None and after.premium_since is not None:
+        # العضو عمل Boost
+        guild = after.guild
+        
+        # نجيب روم البوستات
+        boost_channel = discord.utils.get(guild.text_channels, name="├🚀・𝐁𝐨𝐨𝐬𝐭𝐬")
+        
+        if boost_channel is None:
+            overwrites = {
+                guild.default_role: discord.PermissionOverwrite(send_messages=True, read_messages=True),
+                guild.me: discord.PermissionOverwrite(send_messages=True, read_messages=True)
+            }
+            boost_channel = await guild.create_text_channel(
+                name="├🚀・𝐁𝐨𝐨𝐬𝐭𝐬",
+                overwrites=overwrites,
+                reason="تم إنشاء روم البوستات"
+            )
+            print("✅ تم إنشاء روم البوستات!")
+        
+        try:
+            embed = discord.Embed(
+                description=f"🚀 {after.mention} **boosted the server!** Thank you! 🎉",
+                color=discord.Color.purple()
+            )
+            embed.set_thumbnail(url=after.display_avatar.url)
+            embed.add_field(name="⭐ Boost Count", value=f"{guild.premium_subscription_count} boosts", inline=True)
+            embed.add_field(name="📊 Boost Level", value=f"Level {guild.premium_tier}", inline=True)
+            embed.set_footer(text=f"ID: {after.id} • {after.name}")
+            embed.timestamp = datetime.utcnow()
+            
+            await boost_channel.send(embed=embed)
+            
+        except Exception as e:
+            print(f"❌ Erro in booste système : {e}")
 # ==========================
-# ⚖️ PUNISHMENT COMMANDS
+# 👋 نظام المغادرة (Leave Tracker)
 # ==========================
+
+@bot.event
+async def on_member_remove(member):
+    """عند خروج عضو - يكتب في روم المغادرين"""
+    
+    if member.bot:
+        return
+    
+    guild = member.guild
+    
+    # ===== نجيب روم المغادرين =====
+    leave_channel = discord.utils.get(guild.text_channels, name="├👋・𝐋𝐞𝐚𝐯𝐞𝐬")
+    
+    # إذا مش موجود نعملو
+    if leave_channel is None:
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(send_messages=True, read_messages=True),
+            guild.me: discord.PermissionOverwrite(send_messages=True, read_messages=True)
+        }
+        leave_channel = await guild.create_text_channel(
+            name="├👋・𝐋𝐞𝐚𝐯𝐞𝐬",
+            overwrites=overwrites,
+            reason="تم إنشاء روم المغادرين"
+        )
+        print("✅ تم إنشاء روم المغادرين!")
+    
+    try:
+        # ===== نرسل رسالة GODBYE =====
+        embed = discord.Embed(
+            description=f"👋 **𝐆𝐎𝐃𝐁𝐘𝐄** {member.mention}",
+            color=discord.Color.red()
+        )
+        embed.set_thumbnail(url=member.display_avatar.url)
+        embed.set_footer(text=f"ID: {member.id} • {member.name}")
+        embed.timestamp = datetime.utcnow()
+        
+        await leave_channel.send(embed=embed)
+        
+    except Exception as e:
+        print(f"❌ خطأ في نظام المغادرة: {e}")
+# ==========================
+# ⚖️ PUNISHMENT SYSTEM (Timeout, Ban, Kick, Unban, Untimeout)
+# ==========================
+
+# ----- Helper Functions -----
+
+def convert_time_to_seconds(time_str: str):
+    """Convert time string (e.g., 10m, 1h, 1d) to seconds."""
+    time_str = time_str.lower()
+    if time_str.endswith('s'):
+        return int(time_str[:-1])
+    elif time_str.endswith('m'):
+        return int(time_str[:-1]) * 60
+    elif time_str.endswith('h'):
+        return int(time_str[:-1]) * 3600
+    elif time_str.endswith('d'):
+        return int(time_str[:-1]) * 86400
+    else:
+        return None
+
+async def send_punishment_dm(member: discord.Member, punishment_type: str, duration: str, reason: str, moderator: discord.Member):
+    """Send a DM to the punished member with full details."""
+    try:
+        embed = discord.Embed(
+            title=f"⚠️ {punishment_type}",
+            description=f"You have been **{punishment_type.lower()}** in **{member.guild.name}**.",
+            color=discord.Color.red()
+        )
+        embed.add_field(name="📌 Reason", value=reason if reason else "No reason provided.", inline=False)
+        embed.add_field(name="⏰ Duration", value=duration, inline=True)
+        embed.add_field(name="👮 Moderator", value=moderator.display_name, inline=True)
+        embed.set_footer(text=f"User ID: {member.id}")
+        embed.timestamp = discord.utils.utcnow()
+        
+        await member.send(embed=embed)
+        print(f"✅ DM sent to {member.display_name}")
+    except discord.Forbidden:
+        print(f"❌ DM blocked for {member.display_name}")
+    except Exception as e:
+        print(f"❌ Error sending DM: {e}")
+
+async def send_to_punishment_channel(guild: discord.Guild, punishment_type: str, member: discord.Member, moderator: discord.Member, duration: str, reason: str):
+    """Log the punishment in the dedicated punishment text channel."""
+    try:
+        # Get or create the punishment channel
+        channel = discord.utils.get(guild.text_channels, name="└🚫・𝗣𝚞𝚗𝚜𝚑𝚒𝚖𝚎𝚗𝚝")
+        if channel is None:
+            channel = await guild.create_text_channel(
+                name="└🚫・𝗣𝚞𝚗𝚜𝚑𝚒𝚖𝚎𝚗𝚝",
+                reason="Punishment channel created automatically."
+            )
+            print("✅ Punishment channel created.")
+        
+        embed = discord.Embed(
+            title=f"# Member @{member.display_name} has been {punishment_type.lower()}.",
+            color=discord.Color.red()
+        )
+        embed.add_field(
+            name="Executed By",
+            value=f"User: @{moderator.display_name}\nUser ID: ({moderator.id})",
+            inline=False
+        )
+        embed.add_field(
+            name="Punishment Reason",
+            value=reason if reason else "No reason provided.",
+            inline=False
+        )
+        # Add duration if applicable
+        if duration and duration != "N/A" and duration != "Permanent":
+            embed.add_field(name="Punishment Duration", value=duration, inline=False)
+        elif duration == "Permanent":
+            embed.add_field(name="Punishment Duration", value="**Permanent**", inline=False)
+        
+        embed.set_footer(text=f"Executed at: {discord.utils.utcnow().strftime('%d/%m/%Y %H:%M')}")
+        embed.timestamp = discord.utils.utcnow()
+        
+        await channel.send(embed=embed)
+        print(f"📝 Punishment logged in punishment channel.")
+    except Exception as e:
+        print(f"❌ Error sending to punishment channel: {e}")
+
+async def log_punishment(guild: discord.Guild, punishment_type: str, member: discord.Member, moderator: discord.Member, duration: str, reason: str):
+    """Log the punishment in the logs channel."""
+    try:
+        log_channel = discord.utils.get(guild.text_channels, name="logs")
+        if log_channel is None:
+            log_channel = await guild.create_text_channel(
+                name="logs",
+                reason="Logs channel created automatically."
+            )
+            print("✅ Logs channel created.")
+        
+        embed = discord.Embed(
+            title=f"📋 {punishment_type}",
+            color=discord.Color.dark_red()
+        )
+        embed.add_field(name="👤 Member", value=f"{member.mention} ({member.display_name})", inline=False)
+        embed.add_field(name="👮 Moderator", value=f"{moderator.mention} ({moderator.display_name})", inline=False)
+        embed.add_field(name="⏰ Duration", value=duration, inline=True)
+        embed.add_field(name="📌 Reason", value=reason if reason else "No reason provided.", inline=False)
+        embed.set_footer(text=f"Member ID: {member.id} | Moderator ID: {moderator.id}")
+        embed.timestamp = discord.utils.utcnow()
+        
+        await log_channel.send(embed=embed)
+        print(f"📝 Punishment logged in logs channel.")
+    except Exception as e:
+        print(f"❌ Error logging punishment: {e}")
+
+async def unban_after(guild: discord.Guild, user_id: int, delay: int):
+    """Automatically unban a user after a specified time (for temporary bans)."""
+    await asyncio.sleep(delay)
+    try:
+        user = await guild.fetch_member(user_id)
+        if user:
+            await guild.unban(user)
+            print(f"✅ {user.display_name} has been unbanned automatically.")
+            # Log the auto-unban
+            log_channel = discord.utils.get(guild.text_channels, name="logs")
+            if log_channel:
+                embed = discord.Embed(
+                    title="✅ Automatic Unban",
+                    description=f"<@{user_id}> has been unbanned automatically.",
+                    color=discord.Color.green()
+                )
+                await log_channel.send(embed=embed)
+    except Exception as e:
+        print(f"❌ Error in auto-unban: {e}")
+
+# ----- Punishment Commands -----
 
 @bot.command()
-@commands.is_owner()
+@commands.is_owner()  # Change to @commands.has_permissions(moderate_members=True) for moderators
 async def timeout(ctx, member: discord.Member, time: str, *, reason: str = "No reason provided."):
+    """
+    Timeout a member for a specified duration.
+    Usage: !timeout @user 10m reason
+    Valid time formats: 10s, 5m, 2h, 1d
+    """
     time_seconds = convert_time_to_seconds(time)
     if time_seconds is None:
         return await ctx.send("❌ Invalid time format! Use: `10s`, `5m`, `2h`, `1d`", delete_after=5)
-    if time_seconds > 2419200:
+    if time_seconds > 2419200:  # 28 days max
         return await ctx.send("❌ Maximum timeout is 28 days!", delete_after=5)
+    
     try:
         await member.timeout(timedelta(seconds=time_seconds), reason=reason)
         await send_punishment_dm(member, "Timeout", time, reason, ctx.author)
         await send_to_punishment_channel(ctx.guild, "Timeout", member, ctx.author, time, reason)
         await log_punishment(ctx.guild, "⏱️ Timeout", member, ctx.author, time, reason)
-        embed = discord.Embed(title="⏱️ Timeout", description=f"{member.mention} has been timed out!", color=discord.Color.orange())
+        
+        embed = discord.Embed(
+            title="⏱️ Timeout",
+            description=f"{member.mention} has been timed out!",
+            color=discord.Color.orange()
+        )
         embed.add_field(name="Duration", value=time, inline=True)
         embed.add_field(name="Reason", value=reason, inline=False)
         embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
@@ -1219,28 +1244,46 @@ async def timeout(ctx, member: discord.Member, time: str, *, reason: str = "No r
         await ctx.send(f"❌ Error: {str(e)}", delete_after=5)
 
 @bot.command()
-@commands.is_owner()
+@commands.is_owner()  # Change to @commands.has_permissions(ban_members=True) for moderators
 async def ban(ctx, member: discord.Member, time: str = None, *, reason: str = "No reason provided."):
+    """
+    Ban a member (permanently or temporarily).
+    Usage: !ban @user reason (permanent)
+           !ban @user 1d reason (temporary)
+    """
     try:
         if time and time.lower() != "permanent":
             time_seconds = convert_time_to_seconds(time)
             if time_seconds is None:
                 return await ctx.send("❌ Invalid time format! Use: `10m`, `1h`, `1d`", delete_after=5)
+            
+            # Temporary ban
             await send_punishment_dm(member, "Temporary Ban", time, reason, ctx.author)
             await member.ban(reason=f"{reason} (Temporary: {time})")
             await send_to_punishment_channel(ctx.guild, "Temporary Ban", member, ctx.author, time, reason)
             await log_punishment(ctx.guild, "🔨 Temporary Ban", member, ctx.author, time, reason)
             asyncio.create_task(unban_after(ctx.guild, member.id, time_seconds))
-            embed = discord.Embed(title="🔨 Temporary Ban", description=f"{member.mention} has been banned for {time}!", color=discord.Color.red())
+            
+            embed = discord.Embed(
+                title="🔨 Temporary Ban",
+                description=f"{member.mention} has been banned for {time}!",
+                color=discord.Color.red()
+            )
             embed.add_field(name="Reason", value=reason, inline=False)
             embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
             await ctx.send(embed=embed)
         else:
+            # Permanent ban
             await send_punishment_dm(member, "Permanent Ban", "Permanent", reason, ctx.author)
             await member.ban(reason=reason)
             await send_to_punishment_channel(ctx.guild, "Permanent Ban", member, ctx.author, "Permanent", reason)
             await log_punishment(ctx.guild, "🔨 Permanent Ban", member, ctx.author, "Permanent", reason)
-            embed = discord.Embed(title="🔨 Permanent Ban", description=f"{member.mention} has been banned permanently!", color=discord.Color.dark_red())
+            
+            embed = discord.Embed(
+                title="🔨 Permanent Ban",
+                description=f"{member.mention} has been banned permanently!",
+                color=discord.Color.dark_red()
+            )
             embed.add_field(name="Reason", value=reason, inline=False)
             embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
             await ctx.send(embed=embed)
@@ -1248,14 +1291,23 @@ async def ban(ctx, member: discord.Member, time: str = None, *, reason: str = "N
         await ctx.send(f"❌ Error: {str(e)}", delete_after=5)
 
 @bot.command()
-@commands.is_owner()
+@commands.is_owner()  # Change to @commands.has_permissions(kick_members=True) for moderators
 async def kick(ctx, member: discord.Member, *, reason: str = "No reason provided."):
+    """
+    Kick a member from the server.
+    Usage: !kick @user reason
+    """
     try:
         await send_punishment_dm(member, "Kick", "N/A", reason, ctx.author)
         await member.kick(reason=reason)
         await send_to_punishment_channel(ctx.guild, "Kick", member, ctx.author, "N/A", reason)
         await log_punishment(ctx.guild, "👢 Kick", member, ctx.author, "N/A", reason)
-        embed = discord.Embed(title="👢 Kick", description=f"{member.mention} has been kicked!", color=discord.Color.yellow())
+        
+        embed = discord.Embed(
+            title="👢 Kick",
+            description=f"{member.mention} has been kicked!",
+            color=discord.Color.yellow()
+        )
         embed.add_field(name="Reason", value=reason, inline=False)
         embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
         await ctx.send(embed=embed)
@@ -1263,267 +1315,83 @@ async def kick(ctx, member: discord.Member, *, reason: str = "No reason provided
         await ctx.send(f"❌ Error: {str(e)}", delete_after=5)
 
 @bot.command()
-@commands.is_owner()
+@commands.is_owner()  # Change to @commands.has_permissions(moderate_members=True) for moderators
 async def untimeout(ctx, member: discord.Member, *, reason: str = "No reason provided."):
+    """
+    Remove timeout from a member.
+    Usage: !untimeout @user reason
+    """
     try:
         await member.timeout(None, reason=reason)
-        embed = discord.Embed(title="✅ Timeout Removed", description=f"{member.mention} has been untimed out.", color=discord.Color.green())
+        embed = discord.Embed(
+            title="✅ Timeout Removed",
+            description=f"{member.mention} has been untimed out.",
+            color=discord.Color.green()
+        )
         embed.add_field(name="Reason", value=reason, inline=False)
         embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
         await ctx.send(embed=embed)
+        
+        # Log to logs channel
         log_channel = discord.utils.get(ctx.guild.text_channels, name="logs")
         if log_channel:
-            log_embed = discord.Embed(title="✅ Timeout Removed", description=f"{member.mention} was untimed out by {ctx.author.mention}", color=discord.Color.green())
+            log_embed = discord.Embed(
+                title="✅ Timeout Removed",
+                description=f"{member.mention} was untimed out by {ctx.author.mention}",
+                color=discord.Color.green()
+            )
             log_embed.add_field(name="Reason", value=reason, inline=False)
             await log_channel.send(embed=log_embed)
     except Exception as e:
         await ctx.send(f"❌ Error: {str(e)}", delete_after=5)
 
 @bot.command()
-@commands.is_owner()
+@commands.is_owner()  # Change to @commands.has_permissions(ban_members=True) for moderators
 async def unban(ctx, user_id: int, *, reason: str = "No reason provided."):
+    """
+    Unban a user by their ID.
+    Usage: !unban 123456789 reason
+    """
     try:
         user = await bot.fetch_user(user_id)
         await ctx.guild.unban(user, reason=reason)
-        embed = discord.Embed(title="✅ Unban", description=f"{user.mention} has been unbanned.", color=discord.Color.green())
+        embed = discord.Embed(
+            title="✅ Unban",
+            description=f"{user.mention} has been unbanned.",
+            color=discord.Color.green()
+        )
         embed.add_field(name="Reason", value=reason, inline=False)
         embed.add_field(name="Moderator", value=ctx.author.mention, inline=True)
         await ctx.send(embed=embed)
+        
+        # Log to logs channel
         log_channel = discord.utils.get(ctx.guild.text_channels, name="logs")
         if log_channel:
-            log_embed = discord.Embed(title="✅ Unban", description=f"{user.mention} was unbanned by {ctx.author.mention}", color=discord.Color.green())
+            log_embed = discord.Embed(
+                title="✅ Unban",
+                description=f"{user.mention} was unbanned by {ctx.author.mention}",
+                color=discord.Color.green()
+            )
             log_embed.add_field(name="Reason", value=reason, inline=False)
             await log_channel.send(embed=log_embed)
     except Exception as e:
         await ctx.send(f"❌ Error: {str(e)}", delete_after=5)
 
-# ==========================
-# 📡 STREAM NOTIFICATION COMMANDS
-# ==========================
+# ملف حفظ الإعدادات
+CONFIG_FILE = "stream_config.json"
 
-@bot.command()
-@commands.is_owner()
-async def kick_channel(ctx, channel: discord.TextChannel):
-    config["kick_channel"] = channel.id
-    save_config(config)
-    await ctx.send(f"✅ إشعارات **Kick Live** ستُرسل إلى {channel.mention}")
+def load_config():
+    try:
+        with open(CONFIG_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {"kick": None, "tiktok_live": None, "tiktok_video": None, "kick_streamers": [], "tiktok_streamers": [], "tiktok_video_users": []}
 
-@bot.command()
-@commands.is_owner()
-async def tiktok_live_channel(ctx, channel: discord.TextChannel):
-    config["tiktok_live_channel"] = channel.id
-    save_config(config)
-    await ctx.send(f"✅ إشعارات **TikTok Live** ستُرسل إلى {channel.mention}")
+def save_config(data):
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(data, f, indent=4)
 
-@bot.command()
-@commands.is_owner()
-async def tiktok_video_channel(ctx, channel: discord.TextChannel):
-    config["tiktok_video_channel"] = channel.id
-    save_config(config)
-    await ctx.send(f"✅ إشعارات **TikTok Video** ستُرسل إلى {channel.mention}")
-
-@bot.command()
-@commands.is_owner()
-async def add_kick(ctx, username: str):
-    if username not in config["kick_streamers"]:
-        config["kick_streamers"].append(username)
-        save_config(config)
-        await ctx.send(f"✅ تمت إضافة **{username}** لمراقبة Kick")
-    else:
-        await ctx.send(f"⚠️ **{username}** موجود من قبل")
-
-@bot.command()
-@commands.is_owner()
-async def add_tiktok_live(ctx, username: str):
-    if username not in config["tiktok_live_streamers"]:
-        config["tiktok_live_streamers"].append(username)
-        save_config(config)
-        await ctx.send(f"✅ تمت إضافة **{username}** لمراقبة TikTok Live")
-    else:
-        await ctx.send(f"⚠️ **{username}** موجود من قبل")
-
-@bot.command()
-@commands.is_owner()
-async def add_tiktok_video(ctx, username: str):
-    if username not in config["tiktok_video_users"]:
-        config["tiktok_video_users"].append(username)
-        save_config(config)
-        await ctx.send(f"✅ تمت إضافة **{username}** لمراقبة فيديوهات TikTok")
-    else:
-        await ctx.send(f"⚠️ **{username}** موجود من قبل")
-
-@bot.command()
-@commands.is_owner()
-async def remove_kick(ctx, username: str):
-    if username in config["kick_streamers"]:
-        config["kick_streamers"].remove(username)
-        save_config(config)
-        await ctx.send(f"✅ تم حذف **{username}** من Kick")
-    else:
-        await ctx.send(f"❌ **{username}** غير موجود")
-
-@bot.command()
-@commands.is_owner()
-async def remove_tiktok_live(ctx, username: str):
-    if username in config["tiktok_live_streamers"]:
-        config["tiktok_live_streamers"].remove(username)
-        save_config(config)
-        await ctx.send(f"✅ تم حذف **{username}** من TikTok Live")
-    else:
-        await ctx.send(f"❌ **{username}** غير موجود")
-
-@bot.command()
-@commands.is_owner()
-async def remove_tiktok_video(ctx, username: str):
-    if username in config["tiktok_video_users"]:
-        config["tiktok_video_users"].remove(username)
-        save_config(config)
-        await ctx.send(f"✅ تم حذف **{username}** من TikTok Video")
-    else:
-        await ctx.send(f"❌ **{username}** غير موجود")
-
-@bot.command()
-@commands.is_owner()
-async def stream_list(ctx):
-    embed = discord.Embed(title="📡 إعدادات الإشعارات", color=discord.Color.blue())
-    kick_ch = f"<#{config['kick_channel']}>" if config.get("kick_channel") else "❌ غير محدد"
-    tiktok_live_ch = f"<#{config['tiktok_live_channel']}>" if config.get("tiktok_live_channel") else "❌ غير محدد"
-    tiktok_video_ch = f"<#{config['tiktok_video_channel']}>" if config.get("tiktok_video_channel") else "❌ غير محدد"
-    embed.add_field(name="📺 قناة Kick", value=kick_ch, inline=False)
-    embed.add_field(name="📺 قناة TikTok Live", value=tiktok_live_ch, inline=False)
-    embed.add_field(name="📺 قناة TikTok Video", value=tiktok_video_ch, inline=False)
-    embed.add_field(name="🎮 ستريمرز Kick", value=", ".join(config["kick_streamers"]) or "لا يوجد", inline=False)
-    embed.add_field(name="🎮 ستريمرز TikTok Live", value=", ".join(config["tiktok_live_streamers"]) or "لا يوجد", inline=False)
-    embed.add_field(name="🎮 مستخدمي TikTok Video", value=", ".join(config["tiktok_video_users"]) or "لا يوجد", inline=False)
-    await ctx.send(embed=embed)
-
-@bot.command()
-@commands.is_owner()
-async def test(ctx):
-    sent = 0
-    if config.get("kick_channel"):
-        ch = bot.get_channel(config["kick_channel"])
-        if ch:
-            await ch.send("@everyone 🧪 **اختبار Kick**: الإعدادات تعمل!")
-            sent += 1
-    if config.get("tiktok_live_channel"):
-        ch = bot.get_channel(config["tiktok_live_channel"])
-        if ch:
-            await ch.send("@everyone 🧪 **اختبار TikTok Live**: الإعدادات تعمل!")
-            sent += 1
-    if config.get("tiktok_video_channel"):
-        ch = bot.get_channel(config["tiktok_video_channel"])
-        if ch:
-            await ch.send("@everyone 🧪 **اختبار TikTok Video**: الإعدادات تعمل!")
-            sent += 1
-    if sent == 0:
-        await ctx.send("⚠️ لم تحدد أي قناة بعد!")
-    else:
-        await ctx.send(f"✅ تم إرسال {sent} رسالة اختبار")
-
-# ==========================
-# 🔍 STREAM MONITOR FUNCTIONS
-# ==========================
-
-async def check_kick():
-    ch_id = config.get("kick_channel")
-    streamers = config.get("kick_streamers", [])
-    if not ch_id or not streamers:
-        return
-    channel = bot.get_channel(ch_id)
-    if not channel:
-        return
-    for username in streamers:
-        try:
-            url = f"https://kick.com/api/v2/channels/{username}"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as resp:
-                    if resp.status != 200:
-                        continue
-                    data = await resp.json()
-                    livestream = data.get("livestream")
-                    is_live = bool(livestream and livestream.get("is_live"))
-                    if is_live and not kick_live_status.get(username, False):
-                        title = livestream.get("session_title", "Live now!")
-                        embed = discord.Embed(
-                            title=f"🔴 {username} is LIVE on Kick!",
-                            description=title,
-                            color=0x53FC18,
-                            url=f"https://kick.com/{username}"
-                        )
-                        embed.set_footer(text="Kick Live Alert")
-                        await channel.send(content="@everyone", embed=embed)
-                        kick_live_status[username] = True
-                        print(f"✅ Kick إشعار: {username}")
-                    elif not is_live and kick_live_status.get(username, False):
-                        kick_live_status[username] = False
-        except Exception as e:
-            print(f"❌ Kick error ({username}): {e}")
-
-async def check_tiktok_live():
-    ch_id = config.get("tiktok_live_channel")
-    streamers = config.get("tiktok_live_streamers", [])
-    if not ch_id or not streamers:
-        return
-    channel = bot.get_channel(ch_id)
-    if not channel:
-        return
-    for username in streamers:
-        try:
-            # ⚠️ هنا تحتاج API حقيقي لـ TikTok Live
-            is_live = False
-            if is_live and not tiktok_live_status.get(username, False):
-                embed = discord.Embed(
-                    title=f"🔴 {username} is LIVE on TikTok!",
-                    color=0xFE2C55,
-                    url=f"https://www.tiktok.com/@{username}/live"
-                )
-                embed.set_footer(text="TikTok Live Alert")
-                await channel.send(content="@everyone", embed=embed)
-                tiktok_live_status[username] = True
-                print(f"✅ TikTok Live إشعار: {username}")
-            elif not is_live and tiktok_live_status.get(username, False):
-                tiktok_live_status[username] = False
-        except Exception as e:
-            print(f"❌ TikTok Live error ({username}): {e}")
-
-async def check_tiktok_video():
-    ch_id = config.get("tiktok_video_channel")
-    users = config.get("tiktok_video_users", [])
-    if not ch_id or not users:
-        return
-    channel = bot.get_channel(ch_id)
-    if not channel:
-        return
-    for username in users:
-        try:
-            # ⚠️ هنا تحتاج API حقيقي لـ TikTok
-            video_id = None
-            video_url = None
-            video_title = None
-            if video_id and tiktok_video_status.get(username) != video_id:
-                embed = discord.Embed(
-                    title=f"🎬 New TikTok Video from {username}!",
-                    description=video_title or "",
-                    color=0xFE2C55,
-                    url=video_url
-                )
-                embed.set_footer(text="TikTok Video Alert")
-                await channel.send(content="@everyone", embed=embed)
-                tiktok_video_status[username] = video_id
-                print(f"✅ TikTok Video إشعار: {username}")
-        except Exception as e:
-            print(f"❌ TikTok Video error ({username}): {e}")
-
-# ==========================
-# ⏰ STREAM MONITOR LOOP
-# ==========================
-@tasks.loop(minutes=1)
-async def stream_monitor():
-    await check_kick()
-    await check_tiktok_live()
-    await check_tiktok_video()
-
+config = load_config()
 # ==========================
 # RUN BOT
 # ==========================
@@ -1536,7 +1404,4 @@ print("🚀 Starting bot...")
 keep_alive()
 print("🤖 Bot is starting...")
 try:
-    bot.run(TOKEN)
-except Exception as e:
-    print(f"❌ Bot error: {e}")
-    sys.exit(1)
+    bot
